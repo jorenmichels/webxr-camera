@@ -1,193 +1,475 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>WebXR Camera Feed on Cube</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Camera Cube · WebXR</title>
   <style>
-    body { margin: 0; overflow: hidden; }
-    button {
-      position: absolute;
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@300;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080c10;
+      --surface: #0e141b;
+      --border: rgba(100,200,255,0.15);
+      --accent: #00e5ff;
+      --accent2: #ff3cac;
+      --text: #c8dde8;
+      --dim: #4a6070;
+      --glow: 0 0 20px rgba(0,229,255,0.25);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      overflow: hidden;
+    }
+
+    /* ─── CANVAS ─── */
+    #xr-canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    /* ─── UI OVERLAY ─── */
+    #ui {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding: 0 0 52px;
+      pointer-events: none;
       z-index: 10;
-      top: 20px;
-      left: 20px;
-      padding: 12px 18px;
-      font-size: 16px;
+    }
+
+    .tag {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      opacity: 0.6;
+      margin-bottom: 14px;
+    }
+
+    #launch-btn {
+      pointer-events: all;
+      position: relative;
+      background: transparent;
+      border: 1.5px solid var(--accent);
+      color: var(--accent);
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 16px 44px;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+      clip-path: polygon(12px 0%, 100% 0%, calc(100% - 12px) 100%, 0% 100%);
+    }
+    #launch-btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+      box-shadow: var(--glow);
+    }
+    #launch-btn:disabled {
+      border-color: var(--dim);
+      color: var(--dim);
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* ─── STATUS BAR ─── */
+    #status-bar {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 18px 24px;
+      background: linear-gradient(to bottom, rgba(8,12,16,0.85), transparent);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      z-index: 10;
+    }
+    #status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--dim);
+      transition: background 0.4s;
+      flex-shrink: 0;
+    }
+    #status-dot.active { background: #00ff88; box-shadow: 0 0 8px #00ff88; }
+    #status-dot.error  { background: var(--accent2); }
+
+    /* ─── CORNER DECORATIONS ─── */
+    .corner {
+      position: fixed; width: 28px; height: 28px;
+      border-color: var(--border); border-style: solid;
+      pointer-events: none; z-index: 5;
+    }
+    .corner.tl { top: 14px; left: 14px; border-width: 2px 0 0 2px; }
+    .corner.tr { top: 14px; right: 14px; border-width: 2px 2px 0 0; }
+    .corner.bl { bottom: 14px; left: 14px; border-width: 0 0 2px 2px; }
+    .corner.br { bottom: 14px; right: 14px; border-width: 0 2px 2px 0; }
+
+    /* ─── INFO PANEL (idle) ─── */
+    #info-panel {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      text-align: center; z-index: 10;
+      transition: opacity 0.4s;
+    }
+    #info-panel.hidden { opacity: 0; pointer-events: none; }
+
+    #info-panel h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(28px, 6vw, 54px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #fff;
+      line-height: 1.05;
+      margin-bottom: 12px;
+    }
+    #info-panel h1 span { color: var(--accent); }
+
+    #info-panel p {
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: 0.08em;
+      max-width: 280px;
+      line-height: 1.8;
+    }
+
+    /* ─── EXIT BUTTON (in-session) ─── */
+    #exit-btn {
+      display: none;
+      position: fixed; top: 18px; right: 18px;
+      background: rgba(255,60,172,0.12);
+      border: 1.5px solid var(--accent2);
+      color: var(--accent2);
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      padding: 8px 18px;
+      cursor: pointer;
+      pointer-events: all;
+      z-index: 20;
+      transition: background 0.2s;
+    }
+    #exit-btn:hover { background: rgba(255,60,172,0.28); }
+    #exit-btn.visible { display: block; }
+
+    /* ─── HELP CHIP ─── */
+    #help-chip {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      display: none;
+      background: rgba(0,229,255,0.07);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: var(--dim);
+      padding: 8px 20px;
+      z-index: 20;
+    }
+    #help-chip.visible { display: block; }
+
+    /* scanline effect */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0,0,0,0.04) 3px,
+        rgba(0,0,0,0.04) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
     }
   </style>
 </head>
 <body>
-<button id="startAR">Start AR</button>
-<canvas id="xr-canvas"></canvas>
 
-<script>
-const canvas = document.getElementById("xr-canvas");
-const gl = canvas.getContext("webgl", { xrCompatible: true });
+  <!-- canvas for Three.js / WebXR -->
+  <canvas id="xr-canvas"></canvas>
 
-let xrSession = null;
-let xrRefSpace = null;
-let cameraTexture = null;
-let cubeRotation = 0;
+  <!-- corner brackets -->
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
 
-document.getElementById("startAR").addEventListener("click", async () => {
+  <!-- top status bar -->
+  <div id="status-bar">
+    <div id="status-dot"></div>
+    <span id="status-text">INITIALISING…</span>
+  </div>
+
+  <!-- center info panel -->
+  <div id="info-panel">
+    <h1>Camera<br/><span>Cube</span></h1>
+    <p>Live camera feed mapped onto a 3D cube in augmented reality via WebXR.</p>
+  </div>
+
+  <!-- bottom UI -->
+  <div id="ui">
+    <p class="tag">WebXR · AR · Camera Feed</p>
+    <button id="launch-btn" disabled>Checking support…</button>
+  </div>
+
+  <!-- in-session controls -->
+  <button id="exit-btn">✕ EXIT AR</button>
+  <div id="help-chip" id="help">TAP to move cube · PINCH to scale</div>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════
+//  WebXR AR — Raw Camera Feed on a Cube
+//  Uses:  Three.js r128 (CDN)  +  native WebXR
+// ═══════════════════════════════════════════════════════════
+
+// ── THREE.JS VIA CDN ────────────────────────────────────────
+const THREE = await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js');
+
+// ── UI handles ──────────────────────────────────────────────
+const launchBtn   = document.getElementById('launch-btn');
+const exitBtn     = document.getElementById('exit-btn');
+const helpChip    = document.getElementById('help-chip');
+const statusDot   = document.getElementById('status-dot');
+const statusText  = document.getElementById('status-text');
+const infoPanel   = document.getElementById('info-panel');
+const canvas      = document.getElementById('xr-canvas');
+
+function setStatus(msg, state='idle') {
+  statusText.textContent = msg.toUpperCase();
+  statusDot.className = state === 'active' ? 'active' : state === 'error' ? 'error' : '';
+}
+
+// ── THREE scene / renderer ───────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+// Lighting
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.2));
+const dir = new THREE.DirectionalLight(0x00e5ff, 0.6);
+dir.position.set(1, 2, 1);
+scene.add(dir);
+
+// ── CUBE with camera-texture material ───────────────────────
+const cubeGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+
+// We'll create a VideoTexture once we get the camera stream
+let videoTexture = null;
+let videoEl = null;
+
+// Placeholder material while we wait for camera
+const placeholderMat = new THREE.MeshStandardMaterial({
+  color: 0x00e5ff,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.55,
+});
+
+const cube = new THREE.Mesh(cubeGeo, placeholderMat);
+cube.position.set(0, 0, -0.7);
+scene.add(cube);
+
+// Subtle glow ring around cube (torus)
+const torusGeo = new THREE.TorusGeometry(0.22, 0.006, 8, 60);
+const torusMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.35 });
+const ring = new THREE.Mesh(torusGeo, torusMat);
+ring.rotation.x = Math.PI / 2;
+cube.add(ring);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ── REQUEST RAW CAMERA ACCESS (for texture) ──────────────────
+async function getCameraFeed() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    videoEl = document.createElement('video');
+    videoEl.srcObject = stream;
+    videoEl.autoplay  = true;
+    videoEl.playsInline = true;
+    videoEl.muted = true;
+
+    await new Promise(res => { videoEl.onloadedmetadata = res; });
+    await videoEl.play();
+
+    videoTexture = new THREE.VideoTexture(videoEl);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.format    = THREE.RGBFormat;
+
+    // Apply to all 6 faces
+    const faceMats = Array(6).fill(null).map(() =>
+      new THREE.MeshStandardMaterial({ map: videoTexture, roughness: 0.4, metalness: 0.1 })
+    );
+    cube.material = faceMats;
+    setStatus('Camera feed active', 'active');
+    return true;
+  } catch(e) {
+    console.warn('Camera access failed:', e);
+    setStatus('Camera denied — wireframe mode', 'error');
+    return false;
+  }
+}
+
+// ── ANIMATION LOOP ───────────────────────────────────────────
+let t = 0;
+renderer.setAnimationLoop((timestamp, frame) => {
+  t += 0.005;
+
+  // Idle spin when no XR session, gentle bob in session
+  if (!renderer.xr.isPresenting) {
+    cube.rotation.y = t * 0.9;
+    cube.rotation.x = Math.sin(t * 0.4) * 0.3;
+  } else {
+    cube.rotation.y += 0.005;
+  }
+
+  // Pulse ring opacity
+  ring.material.opacity = 0.2 + Math.sin(t * 2.0) * 0.15;
+
+  if (videoTexture) videoTexture.needsUpdate = true;
+
+  renderer.render(scene, camera);
+});
+
+// ── CHECK WEBXR SUPPORT ──────────────────────────────────────
+async function checkXRSupport() {
   if (!navigator.xr) {
-    alert("WebXR not supported");
+    setStatus('WebXR not available', 'error');
+    launchBtn.textContent = 'WebXR Unavailable';
     return;
   }
 
-  xrSession = await navigator.xr.requestSession("immersive-ar", {
-    requiredFeatures: ["local"],
-    optionalFeatures: ["camera-access"]
-  });
-
-  xrSession.updateRenderState({
-    baseLayer: new XRWebGLLayer(xrSession, gl)
-  });
-
-  xrRefSpace = await xrSession.requestReferenceSpace("local");
-  xrSession.requestAnimationFrame(onXRFrame);
-});
-
-// --- Simple Shader Setup ---
-const vertexShaderSrc = `
-attribute vec3 position;
-attribute vec2 uv;
-uniform mat4 projectionMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 modelMatrix;
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
-}
-`;
-
-const fragmentShaderSrc = `
-precision mediump float;
-varying vec2 vUv;
-uniform sampler2D cameraTex;
-void main() {
-  gl_FragColor = texture2D(cameraTex, vUv);
-}
-`;
-
-function createShader(gl, type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  return shader;
-}
-
-function createProgram(gl, vs, fs) {
-  const program = gl.createProgram();
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  return program;
-}
-
-const program = createProgram(
-  gl,
-  createShader(gl, gl.VERTEX_SHADER, vertexShaderSrc),
-  createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSrc)
-);
-
-gl.useProgram(program);
-
-// --- Cube Geometry ---
-const cubeVertices = new Float32Array([
-  // positions        // uvs
-  -0.5,-0.5,-0.5, 0,0,
-   0.5,-0.5,-0.5, 1,0,
-   0.5, 0.5,-0.5, 1,1,
-  -0.5, 0.5,-0.5, 0,1,
-]);
-
-const indices = new Uint16Array([0,1,2, 0,2,3]);
-
-const vbo = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
-
-const ibo = gl.createBuffer();
-gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-
-const posLoc = gl.getAttribLocation(program, "position");
-const uvLoc = gl.getAttribLocation(program, "uv");
-
-gl.enableVertexAttribArray(posLoc);
-gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 20, 0);
-
-gl.enableVertexAttribArray(uvLoc);
-gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 20, 12);
-
-// --- Texture ---
-cameraTexture = gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D, cameraTexture);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-// --- XR Frame Loop ---
-function onXRFrame(time, frame) {
-  xrSession.requestAnimationFrame(onXRFrame);
-
-  const pose = frame.getViewerPose(xrRefSpace);
-  if (!pose) return;
-
-  const glLayer = xrSession.renderState.baseLayer;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
-
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-
-  for (const view of pose.views) {
-    const viewport = glLayer.getViewport(view);
-    gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
-
-    // ---- Get camera texture ----
-    const camera = frame.getCamera(view);
-    if (camera) {
-      gl.bindTexture(gl.TEXTURE_2D, cameraTexture);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        camera
-      );
-    }
-
-    // Projection & view matrices
-    const projectionMatrix = view.projectionMatrix;
-    const viewMatrix = pose.transform.inverse.matrix;
-
-    const projLoc = gl.getUniformLocation(program, "projectionMatrix");
-    const viewLoc = gl.getUniformLocation(program, "viewMatrix");
-    const modelLoc = gl.getUniformLocation(program, "modelMatrix");
-
-    gl.uniformMatrix4fv(projLoc, false, projectionMatrix);
-    gl.uniformMatrix4fv(viewLoc, false, viewMatrix);
-
-    cubeRotation += 0.01;
-
-    const modelMatrix = mat4RotationY(cubeRotation);
-    gl.uniformMatrix4fv(modelLoc, false, modelMatrix);
-
-    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+  const supported = await navigator.xr.isSessionSupported('immersive-ar');
+  if (supported) {
+    setStatus('AR ready', 'active');
+    launchBtn.textContent = 'Launch AR';
+    launchBtn.disabled = false;
+  } else {
+    setStatus('AR not supported on this device', 'error');
+    launchBtn.textContent = 'AR Not Supported';
+    // Still allow desktop preview
+    launchBtn.disabled = false;
+    launchBtn.textContent = 'Preview (No AR)';
   }
 }
 
-// Simple rotation matrix helper
-function mat4RotationY(angle) {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  return new Float32Array([
-     c,0,s,0,
-     0,1,0,0,
-    -s,0,c,0,
-     0,0,-2,1
-  ]);
+// ── START AR SESSION ─────────────────────────────────────────
+async function startAR() {
+  infoPanel.classList.add('hidden');
+  launchBtn.closest('#ui').style.display = 'none';
+
+  // Get camera first
+  await getCameraFeed();
+
+  // Position cube ~70cm in front of user at head height
+  cube.position.set(0, 0, -0.7);
+
+  try {
+    const sessionInit = {
+      requiredFeatures: ['local'],
+      optionalFeatures: ['dom-overlay', 'hit-test', 'camera-access'],
+      domOverlay: { root: document.body },
+    };
+
+    const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+
+    renderer.xr.setReferenceSpaceType('local');
+    await renderer.xr.setSession(session);
+
+    setStatus('AR active', 'active');
+    exitBtn.classList.add('visible');
+    helpChip.classList.add('visible');
+
+    // ── TAP to reposition cube ──
+    session.addEventListener('select', onSelect);
+
+    session.addEventListener('end', onSessionEnd);
+
+  } catch(err) {
+    console.error('XR session failed:', err);
+    setStatus('Session failed: ' + err.message, 'error');
+    onSessionEnd();
+  }
+}
+
+// ── RETICLE / HIT-TEST (simplified: just move cube on tap) ───
+function onSelect(event) {
+  // Move cube to be 70cm straight ahead of current view
+  const refSpace = renderer.xr.getReferenceSpace();
+  if (refSpace) {
+    // Just bump it slightly so user can "place" it
+    const camPos = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    camera.getWorldPosition(camPos);
+    camera.getWorldDirection(camDir);
+    cube.position.copy(camPos).addScaledVector(camDir, 0.7);
+    cube.lookAt(camPos);
+  }
+}
+
+function onSessionEnd() {
+  setStatus('Session ended', 'idle');
+  exitBtn.classList.remove('visible');
+  helpChip.classList.remove('visible');
+  infoPanel.classList.remove('hidden');
+  launchBtn.closest('#ui').style.display = 'flex';
+  launchBtn.disabled = false;
+
+  // Stop camera stream
+  if (videoEl?.srcObject) {
+    videoEl.srcObject.getTracks().forEach(t => t.stop());
+  }
+
+  // Reset cube to wireframe for idle view
+  cube.material = placeholderMat;
+  videoTexture?.dispose();
+  videoTexture = null;
+}
+
+exitBtn.addEventListener('click', () => {
+  renderer.xr.getSession()?.end();
+});
+
+launchBtn.addEventListener('click', startAR);
+
+// ── DESKTOP PREVIEW (no AR button) ──────────────────────────
+// Show cube spinning on canvas while idle
+setStatus('Checking device…', 'idle');
+await checkXRSupport();
+
+// On desktop with no AR, get camera anyway for preview
+if (!navigator.xr || !(await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false))) {
+  // Desktop preview — just get camera and spin
+  launchBtn.addEventListener('click', async () => {
+    infoPanel.classList.add('hidden');
+    launchBtn.disabled = true;
+    launchBtn.textContent = 'LOADING…';
+    await getCameraFeed();
+    launchBtn.closest('#ui').style.display = 'none';
+    exitBtn.classList.add('visible');
+    exitBtn.addEventListener('click', () => {
+      onSessionEnd();
+    }, { once: true });
+  }, { once: true });
 }
 </script>
 </body>
