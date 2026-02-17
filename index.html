@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebXR Raw Camera Access</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+    <button id="start-ar">Start AR Camera</button>
+    <script src="script.js"></script>
+    <script>
+        document.getElementById('start-ar').addEventListener('click', () => {
+            if (typeof startAR === 'function') startAR();
+        });
+    </script>
+</body>
+</html>
